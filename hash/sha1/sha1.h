@@ -1,28 +1,21 @@
 #pragma once
 
 //ref https://www.ipa.go.jp/security/rfc/RFC3174EN.html and astyle
-
 class SHA1 {
-	enum
-	{
+	enum {
 		shaSuccess = 0,
-		shaNull,            /* Null pointer parameter */
-		shaInputTooLong,    /* input data too long */
-		shaStateError       /* called Input after Result */
+		shaNull,
+		shaInputTooLong,
+		shaStateError,
+		HashSize = 20,
 	};
-	#define HashSize 20
-	#define CircularShift(bits,word) \ (((word) << (bits)) | ((word) >> (32-(bits))))
+	uint32_t CircularShift(uint32_t bits, uint32_t word) { return (((word) << (bits)) | ((word) >> (32-(bits)))); }
 public:
-	uint32_t Intermediate_Hash[HashSize/4]; /* Message Digest  */
-	uint32_t Length_Low;            /* Message length in bits      */
-	uint32_t Length_High;           /* Message length in bits      */
-	/* Index into message block array   */
-	int_least16_t Message_Block_Index;
-	uint8_t Message_Block[64];      /* 512-bit message blocks      */
-	int Computed;               /* Is the digest computed?         */
-	int Corrupted;             /* Is the message digest corrupted? */
-
-
+	uint32_t Intermediate_Hash[HashSize/4] = {0};
+	uint32_t Length_Low = 0; 
+	uint32_t Length_High = 0;
+	int_least16_t Message_Block_Index = {};
+	uint8_t Message_Block[64] = {};
 	int Reset() {
 		Length_Low             = 0;
 		Length_High            = 0;
@@ -32,56 +25,30 @@ public:
 		Intermediate_Hash[2]   = 0x98BADCFE;
 		Intermediate_Hash[3]   = 0x10325476;
 		Intermediate_Hash[4]   = 0xC3D2E1F0;
-		Computed   = 0;
-		Corrupted  = 0;
 		return shaSuccess;
 	}
 
 	int Result(uint8_t *Message_Digest) {
-		int i;
-		if (!Message_Digest) {
-			return shaNull;
+		PadMessage();
+		for(int i=0; i<64; ++i) {
+			Message_Block[i] = 0;
 		}
-		if (Corrupted) {
-			return Corrupted;
-		}
-		if (!Computed) {
-			PadMessage();
-			for(i=0; i<64; ++i) {
-				Message_Block[i] = 0;
-			}
-			Length_Low = 0;    /* and clear length */
-			Length_High = 0;
-			Computed = 1;
-		}
-		for(i = 0; i < HashSize; ++i) {
+		Length_Low = 0;
+		Length_High = 0;
+		for(int i = 0; i < HashSize; ++i) {
 			Message_Digest[i] = Intermediate_Hash[i>>2] >> 8 * ( 3 - ( i & 0x03 ) );
 		}
 		return shaSuccess;
 	}
 
 	int Input(const uint8_t  *message_array,  unsigned length) {
-		if (!length) {
-			return shaSuccess;
-		}
-		if (!message_array) {
-			return shaNull;
-		}
-		if (Computed) {
-			Corrupted = shaStateError;
-			return shaStateError;
-		}
-		if (Corrupted) {
-			return Corrupted;
-		}
-		while(length-- && !Corrupted) {
+		while(length--) {
 			Message_Block[Message_Block_Index++] = (*message_array & 0xFF);
 			Length_Low += 8;
 			if (Length_Low == 0) {
 				Length_High++;
 				if (Length_High == 0) {
-					/* Message is too long */
-					Corrupted = 1;
+					return -1;
 				}
 			}
 			if (Message_Block_Index == 64) {
@@ -93,23 +60,18 @@ public:
 	}
 
 	void ProcessMessageBlock() {
-		const uint32_t K[] = {       /* Constants defined in SHA-1   */
-			0x5A827999,
-			0x6ED9EBA1,
-			0x8F1BBCDC,
-			0xCA62C1D6
+		const uint32_t K[] = { 0x5A827999, 0x6ED9EBA1, 0x8F1BBCDC, 0xCA62C1D6
 		};
-		int           t;                 /* Loop counter                */
-		uint32_t      temp;              /* Temporary word value        */
-		uint32_t      W[80];             /* Word sequence               */
-		uint32_t      A, B, C, D, E;     /* Word buffers                */
-		for(t = 0; t < 16; t++) {
+		uint32_t      temp;
+		uint32_t      W[80];
+		uint32_t      A, B, C, D, E;
+		for(int t = 0; t < 16; t++) {
 			W[t] =  Message_Block[t * 4] << 24;
 			W[t] |= Message_Block[t * 4 + 1] << 16;
 			W[t] |= Message_Block[t * 4 + 2] << 8;
 			W[t] |= Message_Block[t * 4 + 3];
 		}
-		for(t = 16; t < 80; t++) {
+		for(int t = 16; t < 80; t++) {
 			W[t] = CircularShift(1,W[t-3] ^ W[t-8] ^ W[t-14] ^ W[t-16]);
 		}
 		A = Intermediate_Hash[0];
@@ -117,18 +79,15 @@ public:
 		C = Intermediate_Hash[2];
 		D = Intermediate_Hash[3];
 		E = Intermediate_Hash[4];
-		for(t = 0; t < 20; t++)
-		{
-			temp =  CircularShift(5,A) +
-			        ((B & C) | ((~B) & D)) + E + W[t] + K[0];
+		for(int t = 0; t < 20; t++) {
+			temp =  CircularShift(5,A) + ((B & C) | ((~B) & D)) + E + W[t] + K[0];
 			E = D;
 			D = C;
 			C = CircularShift(30,B);
 			B = A;
 			A = temp;
 		}
-		for(t = 20; t < 40; t++)
-		{
+		for(int t = 20; t < 40; t++) {
 			temp = CircularShift(5,A) + (B ^ C ^ D) + E + W[t] + K[1];
 			E = D;
 			D = C;
@@ -136,18 +95,15 @@ public:
 			B = A;
 			A = temp;
 		}
-		for(t = 40; t < 60; t++)
-		{
-			temp = CircularShift(5,A) +
-			       ((B & C) | (B & D) | (C & D)) + E + W[t] + K[2];
+		for(int t = 40; t < 60; t++) {
+			temp = CircularShift(5,A) + ((B & C) | (B & D) | (C & D)) + E + W[t] + K[2];
 			E = D;
 			D = C;
 			C = CircularShift(30,B);
 			B = A;
 			A = temp;
 		}
-		for(t = 60; t < 80; t++)
-		{
+		for(int t = 60; t < 80; t++) {
 			temp = CircularShift(5,A) + (B ^ C ^ D) + E + W[t] + K[3];
 			E = D;
 			D = C;
@@ -164,24 +120,18 @@ public:
 	}
 
 	void PadMessage() {
-		if (Message_Block_Index > 55)
-		{
+		if (Message_Block_Index > 55) {
 			Message_Block[Message_Block_Index++] = 0x80;
-			while(Message_Block_Index < 64)
-			{
+			while(Message_Block_Index < 64) {
 				Message_Block[Message_Block_Index++] = 0;
 			}
 			ProcessMessageBlock();
-			while(Message_Block_Index < 56)
-			{
+			while(Message_Block_Index < 56) {
 				Message_Block[Message_Block_Index++] = 0;
 			}
-		}
-		else
-		{
+		} else {
 			Message_Block[Message_Block_Index++] = 0x80;
-			while(Message_Block_Index < 56)
-			{
+			while(Message_Block_Index < 56) {
 				Message_Block[Message_Block_Index++] = 0;
 			}
 		}
@@ -196,5 +146,4 @@ public:
 		ProcessMessageBlock();
 	}
 };
-
 
